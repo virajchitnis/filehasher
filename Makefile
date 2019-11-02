@@ -21,9 +21,8 @@ clean:
 run:
 	$(GOBUILD) -o $(BINARY_NAME) -v ./...
 	./$(BINARY_NAME)
-#deps:
-#        $(GOGET) github.com/markbates/goth
-#        $(GOGET) github.com/markbates/pop
+deps:
+	$(GOGET) github.com/mattn/go-sqlite3
 
 
 # Cross compilation
