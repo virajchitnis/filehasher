@@ -18,6 +18,7 @@ import (
 var filename string
 var verbose bool
 var update bool
+var files int64
 
 func main() {
 	// Parse command line flags.
@@ -49,9 +50,12 @@ func main() {
 	}
 
 	// Go through all files and directories that have been passed to the program.
+	files = 0
 	for _, path := range flag.Args() {
 		walkPaths(path)
 	}
+
+	fmt.Println()
 }
 
 func walkPaths(path string) {
@@ -65,6 +69,9 @@ func walkPaths(path string) {
 			if info.IsDir() {
 				return nil
 			}
+
+			files++
+			fmt.Printf("\r[%d] ", files)
 
 			// Query database for this particular file.
 			db, err := sql.Open("sqlite3", filename)
