@@ -21,9 +21,9 @@ var update bool
 
 func main() {
 	// Parse command line flags.
-	dbFile := flag.String("db", "filehasher.db3", "The database file to store the hashes in.")
-	displayAll := flag.Bool("verbose", false, "Verbose mode.")
-	doUpdate := flag.Bool("update", false, "Should the database be updated with new hash values if files have changed.")
+	dbFile := flag.String("db", "filehasher.db3", "The database file to store the hashes in")
+	displayAll := flag.Bool("verbose", false, "Verbose mode")
+	doUpdate := flag.Bool("update", false, "Update the database if files have been added or updated")
 	flag.Parse()
 
 	// Output
@@ -84,30 +84,37 @@ func walkPaths(path string) {
 			err = stmt.QueryRow(path).Scan(&size, &mod_time, &hash)
 			switch err {
 			case sql.ErrNoRows:
-				// If file does not exist in database, hash it and add to database.
+				if update {
+					// If file does not exist in database, hash it and add to database.
+					var sha1hash, error = hash_file_sha1(path)
+					if error != nil {
+						return error
+					}
+
+					tx, err := db.Begin()
+					if err != nil {
+						log.Fatal(err)
+					}
+					stmt, err := tx.Prepare("insert into files values(?, ?, ?, ?)")
+					if err != nil {
+						log.Fatal(err)
+					}
+					defer stmt.Close()
+					_, err = stmt.Exec(path, info.Size(), info.ModTime().UTC(), sha1hash)
+					if err != nil {
+						log.Fatal(err)
+					}
+					tx.Commit()
+
+					fmt.Println("\u001b[34mAA --\u001b[0m", path, info.Size(), info.ModTime().UTC(), sha1hash)
+				}
+			case nil:
+				// Hash the file to check data consistency.
 				var sha1hash, error = hash_file_sha1(path)
 				if error != nil {
 					return error
 				}
-
-				tx, err := db.Begin()
-				if err != nil {
-					log.Fatal(err)
-				}
-				stmt, err := tx.Prepare("insert into files values(?, ?, ?, ?)")
-				if err != nil {
-					log.Fatal(err)
-				}
-				defer stmt.Close()
-				_, err = stmt.Exec(path, info.Size(), info.ModTime().UTC(), sha1hash)
-				if err != nil {
-					log.Fatal(err)
-				}
-				tx.Commit()
-
-				fmt.Println("AA --", path, info.Size(), info.ModTime().UTC(), sha1hash)
-			case nil:
-				// If file exists in database, check if modification time changed. Hash if changed.
+				// If file exists in database, check if modification time changed.
 				var changed = false
 				if info.Size() != size {
 					changed = true
@@ -117,13 +124,9 @@ func walkPaths(path string) {
 				}
 
 				if changed {
-					var sha1hash, error = hash_file_sha1(path)
-					if error != nil {
-						return error
-					}
-
-					fmt.Println("UO --", path, size, mod_time, hash)
-					fmt.Println("UN --", path, info.Size(), info.ModTime().UTC(), sha1hash)
+					// File has changed.
+					fmt.Println("\u001b[35mUO --\u001b[0m", path, size, mod_time, hash)
+					fmt.Println("\u001b[35mUN --\u001b[0m", path, info.Size(), info.ModTime().UTC(), sha1hash)
 
 					if update {
 						tx, err := db.Begin()
@@ -141,8 +144,15 @@ func walkPaths(path string) {
 						}
 						tx.Commit()
 					}
-				} else if verbose {
-					fmt.Println("-- --", path, size, mod_time, hash)
+				} else {
+					// File has not changed.
+					if sha1hash != hash {
+						// File is damaged.
+						fmt.Println("\u001b[31mDO --\u001b[0m", path, size, mod_time, hash)
+						fmt.Println("\u001b[31mDN --\u001b[0m", path, info.Size(), info.ModTime().UTC(), sha1hash)
+					} else if verbose {
+						fmt.Println("\u001b[32m-- --\u001b[0m", path, size, mod_time, hash)
+					}
 				}
 			}
 
